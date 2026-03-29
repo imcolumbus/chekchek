@@ -7,14 +7,14 @@
  * 서명: 어머니의 편안하고 따뜻한 독서를 위해 정성을 다해 만들었습니다. ✍️
  * ==========================================
  * [버전 정보]
- * v1.2.5 (업데이트 일자: 2026.03.29)
+ * v1.2.6 (업데이트 일자: 2026.03.29)
  * * * [주요 업데이트 내용]
  * 1. UI/UX 전면 개편: 상업용 앱 수준의 부드러운 애니메이션, 글래스모피즘 디자인, 하단 네비게이션 바 적용.
  * 2. 카테고리 세분화: 전체, 추천, 고전소설, 에세이, 시 등 탭(Tab) 기능 추가.
  * 3. 관리자 비밀번호 개선: 최초 1회 입력 시 자동 로그인(로컬 스토리지 활용), 관리자 페이지 내 비밀번호 변경 기능 추가.
  * 4. 콘텐츠 자동 업데이트 로직 개선: 업데이트 진행 상황(몇 권 중 몇 권 진행) 및 결과 시각적 피드백 추가.
  * 5. 데이터베이스가 비어있을 경우 빈 화면 방지(Fallback) 적용.
- * 6. [중요 픽스] 데이터베이스 보안 규칙(Permission Denied) 차단 시 사용자에게 원인을 알려주는 알림 로직 추가.
+ * 6. [중요 픽스] 인증 오류 디버깅 강화: 단순히 "익명 로그인을 켜달라"는 메시지 대신, 실제 에러 코드(auth/unauthorized-domain 등)를 상세 출력하도록 개선.
  * ==========================================
  */
 
@@ -118,7 +118,15 @@ export default function App() {
         }
       } catch (error) {
         console.error("Auth error:", error);
-        setToastMsg("Firebase 설정 오류: '익명 로그인(Anonymous)'을 켜주세요!");
+        
+        // 에러 코드를 더 명확하게 분석해서 보여주는 로직으로 업그레이드
+        if (error.code === 'auth/unauthorized-domain') {
+          setToastMsg("오류: Firebase '승인된 도메인'에 Vercel 주소를 추가해주세요!");
+        } else if (error.code === 'auth/operation-not-allowed') {
+          setToastMsg("오류: Firebase '익명 로그인(Anonymous)'을 사용 설정해주세요!");
+        } else {
+          setToastMsg(`인증 오류 발생: ${error.code || error.message}`);
+        }
       }
     };
     initAuth();
@@ -139,7 +147,7 @@ export default function App() {
     }, (error) => {
       console.error("Firestore 데이터 에러:", error);
       if (error.code === 'permission-denied') {
-        setToastMsg("데이터베이스 접근이 차단되었습니다. Firebase 보안 규칙(Rules)을 확인하세요.");
+        setToastMsg("DB 접근 차단됨: Firebase 보안 규칙(Rules)을 확인하세요.");
       }
     });
 
@@ -174,7 +182,7 @@ export default function App() {
 
   const showToast = (msg) => {
     setToastMsg(msg);
-    setTimeout(() => setToastMsg(''), 4000);
+    setTimeout(() => setToastMsg(''), 4000); // 사용자가 메시지를 읽을 수 있도록 4초로 연장
   };
 
   const updateSetting = (key, value) => {
