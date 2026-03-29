@@ -34,9 +34,14 @@ import {
 // 🚨 주의: 현재는 미리보기 환경을 위해 임시 변수(__firebase_config)를 사용 중입니다.
 // 실제 Vercel 등에 배포할 때는 아래 코드를 지우고 본인의 Firebase Config 객체로 덮어씌워야 합니다.
 // 예시: const firebaseConfig = { apiKey: "...", authDomain: "...", projectId: "..." };
-const firebaseConfig = typeof __firebase_config !== 'undefined' 
-  ? JSON.parse(__firebase_config) 
-  : { projectId: "demo-project" };
+const firebaseConfig = {
+  apiKey: "AIzaSyAB0wKFTZ640iv5IcDAOLph7mNCtEYUU1I",
+  authDomain: "momsbookgarden.firebaseapp.com",
+  projectId: "momsbookgarden",
+  storageBucket: "momsbookgarden.firebasestorage.app",
+  messagingSenderId: "651374929728",
+  appId: "1:651374929728:web:57d1c93033e57e4577bca5"
+};
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -121,14 +126,14 @@ export default function App() {
     const unsubscribeBooks = onSnapshot(booksRef, (snapshot) => {
       const bookList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setBooks(bookList.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
-    });
+    }, (error) => console.error("Firestore 데이터 에러:", error));
 
     // 2. 관리자 비밀번호 세팅 가져오기
     const settingsRef = collection(db, 'artifacts', appId, 'public', 'data', 'settings');
     const unsubscribeSettings = onSnapshot(settingsRef, (snapshot) => {
       const pwdDoc = snapshot.docs.find(doc => doc.id === 'admin');
       if (pwdDoc) setAdminPassword(pwdDoc.data().password);
-    });
+    }, (error) => console.error("Firestore 권한 에러:", error));
 
     // 3. 개인 진행률
     const progressRef = collection(db, 'artifacts', appId, 'users', user.uid, 'progress');
@@ -137,13 +142,13 @@ export default function App() {
       snapshot.docs.forEach(doc => { pData[doc.id] = doc.data(); });
       setProgressData(pData);
       setFlowerLevel(Object.values(pData).filter(p => p.percent >= 95).length);
-    });
+    }, (error) => console.error("Firestore 진행률 에러:", error));
 
     // 4. 개인 스크랩
     const scrapsRef = collection(db, 'artifacts', appId, 'users', user.uid, 'scraps');
     const unsubscribeScraps = onSnapshot(scrapsRef, (snapshot) => {
       setScraps(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
+    }, (error) => console.error("Firestore 보관함 에러:", error));
 
     return () => {
       unsubscribeBooks(); unsubscribeSettings(); unsubscribeProgress(); unsubscribeScraps();
