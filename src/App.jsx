@@ -14,7 +14,7 @@
  * 3. 관리자 비밀번호 개선: 최초 1회 입력 시 자동 로그인(로컬 스토리지 활용), 관리자 페이지 내 비밀번호 변경 기능 추가.
  * 4. 콘텐츠 자동 업데이트 로직 개선: 업데이트 진행 상황(몇 권 중 몇 권 진행) 및 결과 시각적 피드백 추가.
  * 5. 데이터베이스가 비어있을 경우 빈 화면 방지(Fallback) 적용.
- * 6. [중요 픽스] 인증 오류 디버깅 강화: 단순히 "익명 로그인을 켜달라"는 메시지 대신, 실제 에러 코드(auth/unauthorized-domain 등)를 상세 출력하도록 개선.
+ * 6. [중요 픽스] 인증 오류 디버깅 강화 및 폐기된 API Key 안내 주석 추가.
  * ==========================================
  */
 
@@ -34,7 +34,9 @@ import {
 
 // --- Firebase 초기화 ---
 const firebaseConfig = {
-  apiKey: "AIzaSyAB0wKFTZ640iv5IcDAOLph7mNCtEYUU1I",
+  // 🚨 [매우 중요] 기존 키는 보안 문제로 정지되었습니다!
+  // Firebase 콘솔 -> 프로젝트 설정(톱니바퀴) -> '웹 API 키'를 복사해서 아래에 새로 붙여넣어 주세요.
+  apiKey: "AIzaSyCY1-terzob-QucfbY3AT8UNyEFVjuu6y8",
   authDomain: "momsbookgarden.firebaseapp.com",
   projectId: "momsbookgarden",
   storageBucket: "momsbookgarden.firebasestorage.app",
@@ -119,11 +121,13 @@ export default function App() {
       } catch (error) {
         console.error("Auth error:", error);
         
-        // 에러 코드를 더 명확하게 분석해서 보여주는 로직으로 업그레이드
+        // 에러 코드를 더 명확하게 분석해서 보여주는 로직
         if (error.code === 'auth/unauthorized-domain') {
           setToastMsg("오류: Firebase '승인된 도메인'에 Vercel 주소를 추가해주세요!");
         } else if (error.code === 'auth/operation-not-allowed') {
           setToastMsg("오류: Firebase '익명 로그인(Anonymous)'을 사용 설정해주세요!");
+        } else if (error.code === 'auth/api-key-not-valid' || error.code === 'auth/api-key-not-found') {
+          setToastMsg("오류: Firebase 웹 API 키가 올바르지 않거나 폐기되었습니다. 새로운 키로 교체해주세요!");
         } else {
           setToastMsg(`인증 오류 발생: ${error.code || error.message}`);
         }
@@ -182,7 +186,7 @@ export default function App() {
 
   const showToast = (msg) => {
     setToastMsg(msg);
-    setTimeout(() => setToastMsg(''), 4000); // 사용자가 메시지를 읽을 수 있도록 4초로 연장
+    setTimeout(() => setToastMsg(''), 4000); 
   };
 
   const updateSetting = (key, value) => {
