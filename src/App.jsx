@@ -7,12 +7,13 @@
  * 서명: 어머니의 편안하고 따뜻한 독서를 위해 정성을 다해 만들었습니다. ✍️
  * ==========================================
  * [버전 정보]
- * v1.2.1 (업데이트 일자: 2026.03.29)
+ * v1.2.2 (업데이트 일자: 2026.03.29)
  * * * [주요 업데이트 내용]
  * 1. UI/UX 전면 개편: 상업용 앱 수준의 부드러운 애니메이션, 글래스모피즘 디자인, 하단 네비게이션 바 적용.
  * 2. 카테고리 세분화: 전체, 추천, 고전소설, 에세이, 시 등 탭(Tab) 기능 추가.
  * 3. 관리자 비밀번호 개선: 최초 1회 입력 시 자동 로그인(로컬 스토리지 활용), 관리자 페이지 내 비밀번호 변경 기능 추가.
  * 4. 콘텐츠 자동 업데이트 로직 개선: 업데이트 진행 상황(몇 권 중 몇 권 진행) 및 결과 시각적 피드백 추가.
+ * 5. [중요 픽스] 데이터베이스 동기화 오류 해결: PC와 모바일이 동일한 DB를 바라보도록 appId 완전 고정.
  * ==========================================
  */
 
@@ -30,9 +31,7 @@ import {
   getFirestore, collection, doc, setDoc, getDocs, onSnapshot, addDoc, deleteDoc 
 } from 'firebase/firestore';
 
-// --- [수정 필요] Firebase 초기화 ---
-// 🚨 주의: 현재는 미리보기 환경을 위해 임시 변수(__firebase_config)를 사용 중입니다.
-// 실제 Vercel 등에 배포할 때는 아래 코드를 지우고 본인의 Firebase Config 객체로 덮어씌워야 합니다.
+// --- Firebase 초기화 ---
 const firebaseConfig = {
   apiKey: "AIzaSyAB0wKFTZ640iv5IcDAOLph7mNCtEYUU1I",
   authDomain: "momsbookgarden.firebaseapp.com",
@@ -46,10 +45,12 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// 🚨 주의: 배포 시 본인만의 고유한 앱 ID 문자열로 변경하셔도 좋습니다.
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'chekchek-app';
+// 🚨 [중요 픽스] 앱 ID 완전 고정!
+// PC 미리보기 화면과 Vercel 모바일 화면이 서로 다른 저장소를 바라보는 현상을 막기 위해
+// 'momsbookgarden-app' 이라는 고정된 방 번호(appId)만 사용하도록 수정했습니다.
+const appId = 'momsbookgarden-app';
 
-// --- [수정 가능] 오픈 도메인 데이터베이스 (관리자 원클릭 업데이트용) ---
+// --- 오픈 도메인 데이터베이스 (관리자 원클릭 업데이트용) ---
 const PUBLIC_RESOURCES = [
   {
     title: "별 헤는 밤", author: "윤동주", category: "시",
