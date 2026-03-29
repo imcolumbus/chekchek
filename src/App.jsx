@@ -2,6 +2,9 @@
  * ==========================================
  * 모바일 이북 프로그램 : 책책 (ChekChek)
  * 대상: 어머니
+ * 기획: 아들/딸 (사용자)
+ * 개발: Gemini
+ * 서명: 어머니의 편안하고 따뜻한 독서를 위해 정성을 다해 만들었습니다. ✍️
  * ==========================================
  * [버전 정보]
  * v1.2.0 (업데이트 일자: 2026.03.29)
@@ -27,7 +30,10 @@ import {
   getFirestore, collection, doc, setDoc, getDocs, onSnapshot, addDoc, deleteDoc 
 } from 'firebase/firestore';
 
-// --- Firebase 초기화 ---
+// --- [수정 필요] Firebase 초기화 ---
+// 🚨 주의: 현재는 미리보기 환경을 위해 임시 변수(__firebase_config)를 사용 중입니다.
+// 실제 Vercel 등에 배포할 때는 아래 코드를 지우고 본인의 Firebase Config 객체로 덮어씌워야 합니다.
+// 예시: const firebaseConfig = { apiKey: "...", authDomain: "...", projectId: "..." };
 const firebaseConfig = typeof __firebase_config !== 'undefined' 
   ? JSON.parse(__firebase_config) 
   : { projectId: "demo-project" };
@@ -35,9 +41,13 @@ const firebaseConfig = typeof __firebase_config !== 'undefined'
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+
+// 🚨 주의: 배포 시 본인만의 고유한 앱 ID 문자열로 변경하셔도 좋습니다. (예: 'chekchek-my-mom-app')
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'chekchek-app';
 
-// --- 오픈 도메인 데이터베이스 (관리자 원클릭 업데이트용) ---
+// --- [수정 가능] 오픈 도메인 데이터베이스 (관리자 원클릭 업데이트용) ---
+// 이곳에 인터넷에 공개된 저작권 만료 시, 소설, 에세이 등을 추가해두면 
+// 관리자 페이지에서 클릭 한 번으로 앱에 반영됩니다.
 const PUBLIC_RESOURCES = [
   {
     title: "별 헤는 밤", author: "윤동주", category: "시",
@@ -71,7 +81,9 @@ export default function App() {
   const [scraps, setScraps] = useState([]);
   const [flowerLevel, setFlowerLevel] = useState(0);
   
-  const [adminPassword, setAdminPassword] = useState("1234"); // 기본 비밀번호
+  // --- [확인 필요] 기본 관리자 비밀번호 ---
+  // 앱 최초 구동 시 비밀번호입니다. 관리자 페이지에서 변경하세요.
+  const [adminPassword, setAdminPassword] = useState("1234"); 
   const [adminClickCount, setAdminClickCount] = useState(0);
   const [toastMsg, setToastMsg] = useState('');
 
@@ -629,15 +641,16 @@ function AdminView({ appId, onClose, showToast, theme, currentBooks }) {
         return;
       }
 
-      // 2. 새로운 리소스 1개를 DB에 추가
-      const resourceToAdd = newResources[0]; // 순차적으로 하나씩 추가
+      // 2. 새로운 리소스 모두 DB에 한 번에 추가 (번거로움 최소화)
       const booksRef = collection(db, 'artifacts', appId, 'public', 'data', 'books');
-      await addDoc(booksRef, {
-        ...resourceToAdd,
-        createdAt: new Date().toISOString()
-      });
+      for (const resourceToAdd of newResources) {
+        await addDoc(booksRef, {
+          ...resourceToAdd,
+          createdAt: new Date().toISOString()
+        });
+      }
       
-      showToast(`✨ 새로운 오픈 리소스 [${resourceToAdd.title}] 가 추가되었습니다!`);
+      showToast(`✨ 총 ${newResources.length}권의 새로운 책이 한 번에 자동 추가되었습니다!`);
     } catch (error) {
       showToast("오픈 리소스 업데이트 중 오류가 발생했습니다.");
     } finally {
