@@ -7,14 +7,14 @@
  * 서명: 어머니의 편안하고 따뜻한 독서를 위해 정성을 다해 만들었습니다. ✍️
  * ==========================================
  * [버전 정보]
- * v1.2.6 (업데이트 일자: 2026.03.29)
+ * v1.2.8 (업데이트 일자: 2026.03.29)
  * * * [주요 업데이트 내용]
  * 1. UI/UX 전면 개편: 상업용 앱 수준의 부드러운 애니메이션, 글래스모피즘 디자인, 하단 네비게이션 바 적용.
  * 2. 카테고리 세분화: 전체, 추천, 고전소설, 에세이, 시 등 탭(Tab) 기능 추가.
  * 3. 관리자 비밀번호 개선: 최초 1회 입력 시 자동 로그인(로컬 스토리지 활용), 관리자 페이지 내 비밀번호 변경 기능 추가.
  * 4. 콘텐츠 자동 업데이트 로직 개선: 업데이트 진행 상황(몇 권 중 몇 권 진행) 및 결과 시각적 피드백 추가.
  * 5. 데이터베이스가 비어있을 경우 빈 화면 방지(Fallback) 적용.
- * 6. [중요 픽스] 인증 오류 디버깅 강화 및 폐기된 API Key 안내 주석 추가.
+ * 6. [중요 픽스] 환경 변수 접근 방식 호환성 개선: 일부 빌드 환경에서 import.meta 오류가 발생하는 현상 수정.
  * ==========================================
  */
 
@@ -33,10 +33,21 @@ import {
 } from 'firebase/firestore';
 
 // --- Firebase 초기화 ---
+// 빌드 환경(Vite 등)의 호환성을 위해 안전하게 환경 변수에 접근합니다.
+const getEnv = (key) => {
+  try {
+    return import.meta.env[key];
+  } catch (e) {
+    return null;
+  }
+};
+
 const firebaseConfig = {
-  // 🚨 [매우 중요] 기존 키는 보안 문제로 정지되었습니다!
-  // Firebase 콘솔 -> 프로젝트 설정(톱니바퀴) -> '웹 API 키'를 복사해서 아래에 새로 붙여넣어 주세요.
-  apiKey: "AIzaSyCY1-terzob-QucfbY3AT8UNyEFVjuu6y8",
+  // Vercel 설정(Settings > Environment Variables)에서 
+  // Key: VITE_FIREBASE_API_KEY
+  // Value: 본인의_진짜_API_키
+  // 를 입력하고 재배포(Redeploy) 해주세요.
+  apiKey: getEnv('VITE_FIREBASE_API_KEY') || "API_KEY_REQUIRED",
   authDomain: "momsbookgarden.firebaseapp.com",
   projectId: "momsbookgarden",
   storageBucket: "momsbookgarden.firebasestorage.app",
@@ -75,7 +86,6 @@ const PUBLIC_RESOURCES = [
   }
 ];
 
-// 빈 화면 방지용 목업 데이터
 const MOCK_BOOKS = PUBLIC_RESOURCES.map((res, index) => ({
   id: `mock_${index}`,
   ...res,
@@ -85,14 +95,11 @@ const MOCK_BOOKS = PUBLIC_RESOURCES.map((res, index) => ({
 export default function App() {
   const [user, setUser] = useState(null);
   const [currentView, setCurrentView] = useState('home'); 
-  
   const [books, setBooks] = useState(MOCK_BOOKS); 
   const [activeBook, setActiveBook] = useState(null);
-  
   const [progressData, setProgressData] = useState({});
   const [scraps, setScraps] = useState([]);
   const [flowerLevel, setFlowerLevel] = useState(0);
-  
   const [adminPassword, setAdminPassword] = useState("1234"); 
   const [adminClickCount, setAdminClickCount] = useState(0);
   const [toastMsg, setToastMsg] = useState('');
@@ -104,7 +111,6 @@ export default function App() {
     fontFamily: 'font-serif' 
   });
 
-  // --- Firebase 인증 및 데이터 동기화 ---
   useEffect(() => {
     const initAuth = async () => {
       try {
@@ -112,7 +118,6 @@ export default function App() {
           try {
             await signInWithCustomToken(auth, __initial_auth_token);
           } catch (customTokenError) {
-            console.warn("커스텀 토큰 로그인 실패. 익명 로그인으로 전환합니다.");
             await signInAnonymously(auth);
           }
         } else {
@@ -120,21 +125,18 @@ export default function App() {
         }
       } catch (error) {
         console.error("Auth error:", error);
-        
-        // 에러 코드를 더 명확하게 분석해서 보여주는 로직
         if (error.code === 'auth/unauthorized-domain') {
           setToastMsg("오류: Firebase '승인된 도메인'에 Vercel 주소를 추가해주세요!");
         } else if (error.code === 'auth/operation-not-allowed') {
           setToastMsg("오류: Firebase '익명 로그인(Anonymous)'을 사용 설정해주세요!");
         } else if (error.code === 'auth/api-key-not-valid' || error.code === 'auth/api-key-not-found') {
-          setToastMsg("오류: Firebase 웹 API 키가 올바르지 않거나 폐기되었습니다. 새로운 키로 교체해주세요!");
+          setToastMsg("오류: Firebase 환경 변수(VITE_FIREBASE_API_KEY)가 없거나 잘못되었습니다.");
         } else {
           setToastMsg(`인증 오류 발생: ${error.code || error.message}`);
         }
       }
     };
     initAuth();
-
     const unsubscribe = onAuthStateChanged(auth, setUser);
     return () => unsubscribe();
   }, []);
@@ -149,7 +151,6 @@ export default function App() {
         setBooks(bookList.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
       }
     }, (error) => {
-      console.error("Firestore 데이터 에러:", error);
       if (error.code === 'permission-denied') {
         setToastMsg("DB 접근 차단됨: Firebase 보안 규칙(Rules)을 확인하세요.");
       }
@@ -159,7 +160,7 @@ export default function App() {
     const unsubscribeSettings = onSnapshot(settingsRef, (snapshot) => {
       const pwdDoc = snapshot.docs.find(doc => doc.id === 'admin');
       if (pwdDoc) setAdminPassword(pwdDoc.data().password);
-    }, (error) => console.error("Firestore 권한 에러:", error));
+    });
 
     const progressRef = collection(db, 'artifacts', appId, 'users', user.uid, 'progress');
     const unsubscribeProgress = onSnapshot(progressRef, (snapshot) => {
@@ -167,12 +168,12 @@ export default function App() {
       snapshot.docs.forEach(doc => { pData[doc.id] = doc.data(); });
       setProgressData(pData);
       setFlowerLevel(Object.values(pData).filter(p => p.percent >= 95).length);
-    }, (error) => console.error("Firestore 진행률 에러:", error));
+    });
 
     const scrapsRef = collection(db, 'artifacts', appId, 'users', user.uid, 'scraps');
     const unsubscribeScraps = onSnapshot(scrapsRef, (snapshot) => {
       setScraps(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    }, (error) => console.error("Firestore 보관함 에러:", error));
+    });
 
     return () => {
       unsubscribeBooks(); unsubscribeSettings(); unsubscribeProgress(); unsubscribeScraps();
@@ -219,7 +220,6 @@ export default function App() {
 
   return (
     <div className={`min-h-screen w-full transition-all duration-500 font-sans ${isDark ? 'bg-[#121212] text-stone-200' : 'bg-[#F9F8F6] text-stone-800'}`}>
-      
       {toastMsg && (
         <div className="fixed top-6 left-1/2 transform -translate-x-1/2 z-50 bg-stone-800/90 backdrop-blur-md text-white px-6 py-3 rounded-full shadow-2xl font-medium text-sm transition-all animate-fade-in-up whitespace-nowrap">
           {toastMsg}
@@ -274,9 +274,6 @@ export default function App() {
   );
 }
 
-// ==========================================
-// 1. 메인 홈 화면 (HomeView)
-// ==========================================
 function HomeView({ books, progressData, flowerLevel, handleAdminTrigger, onOpenBook, theme, onNavChange }) {
   const [activeCategory, setActiveCategory] = useState('추천');
   const categories = ['추천', '고전소설', '에세이', '시', '전체'];
@@ -399,9 +396,6 @@ function HomeView({ books, progressData, flowerLevel, handleAdminTrigger, onOpen
   );
 }
 
-// ==========================================
-// 2. 책 읽기 화면 (ReaderView)
-// ==========================================
 function ReaderView({ book, user, appId, settings, updateSetting, initialProgress, onClose, showToast }) {
   const contentRef = useRef(null);
   const [isPlayingTTS, setIsPlayingTTS] = useState(false);
@@ -499,7 +493,7 @@ function ReaderView({ book, user, appId, settings, updateSetting, initialProgres
               <div className="flex justify-between space-x-2 bg-stone-100 dark:bg-stone-900 p-1 rounded-2xl">
                 {['text-lg', 'text-xl', 'text-2xl', 'text-3xl'].map((size, i) => (
                   <button key={size} onClick={() => updateSetting('fontSize', size)}
-                    className={`flex-1 py-2 rounded-xl text-sm font-bold transition-all ${settings.fontSize === size ? 'bg-white dark:bg-stone-700 shadow-sm text-amber-600 dark:text-amber-400' : 'text-stone-500'}`}
+                    className={`flex-1 py-2 rounded-xl text-sm font-bold transition-all ${settings.fontSize === size ? 'bg-white dark:bg-stone-700 shadow-sm text-amber-600 dark:text-amber-400' : 'text-stone-50'}`}
                   >가{i===3 && '+'}</button>
                 ))}
               </div>
@@ -565,9 +559,6 @@ function ReaderView({ book, user, appId, settings, updateSetting, initialProgres
   );
 }
 
-// ==========================================
-// 3. 보관함 화면 (ScrapbookView)
-// ==========================================
 function ScrapbookView({ scraps, user, appId, onNavChange, theme }) {
   const isDark = theme === 'dark';
   const handleDelete = async (id) => {
@@ -614,16 +605,12 @@ function ScrapbookView({ scraps, user, appId, onNavChange, theme }) {
   );
 }
 
-// ==========================================
-// 4. 관리자 화면 (AdminView)
-// ==========================================
 function AdminView({ appId, onClose, showToast, theme, db }) {
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');
   const [category, setCategory] = useState('에세이');
   const [coverUrl, setCoverUrl] = useState('');
   const [content, setContent] = useState('');
-  
   const [newPassword, setNewPassword] = useState('');
   const [isUpdatingPwd, setIsUpdatingPwd] = useState(false);
   const [isUpdatingResource, setIsUpdatingResource] = useState(false);
@@ -632,11 +619,9 @@ function AdminView({ appId, onClose, showToast, theme, db }) {
   const isDark = theme === 'dark';
   const inputClass = `w-full p-4 rounded-2xl mb-5 border font-medium ${isDark ? 'bg-stone-900 border-stone-700 text-white' : 'bg-stone-50 border-stone-200'} focus:ring-2 focus:ring-amber-500 outline-none transition-all`;
 
-  // --- 수동 추가 로직 ---
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!title || !content) return showToast("제목과 내용은 필수입니다.");
-    
     try {
       const booksRef = collection(db, 'artifacts', appId, 'public', 'data', 'books');
       await addDoc(booksRef, {
@@ -647,7 +632,6 @@ function AdminView({ appId, onClose, showToast, theme, db }) {
       showToast("새 콘텐츠가 성공적으로 등록되었습니다.");
       setTitle(''); setAuthor(''); setCoverUrl(''); setContent('');
     } catch (error) { 
-      console.error("수동 등록 에러 상세:", error);
       if (error.code === 'permission-denied') {
         showToast("권한이 없습니다. Firebase 보안 규칙(Rules)을 확인하세요.");
       } else {
@@ -656,16 +640,13 @@ function AdminView({ appId, onClose, showToast, theme, db }) {
     }
   };
 
-  // --- 오픈 리소스 자동 업데이트 로직 ---
   const handleAutoUpdate = async () => {
     setIsUpdatingResource(true);
     setUpdateProgressMsg('업데이트 준비 중...');
-    
     try {
       const booksRef = collection(db, 'artifacts', appId, 'public', 'data', 'books');
       const snapshot = await getDocs(booksRef);
       const existingTitles = snapshot.docs.map(doc => doc.data().title);
-      
       const newResources = PUBLIC_RESOURCES.filter(r => !existingTitles.includes(r.title));
       
       if (newResources.length === 0) {
@@ -679,22 +660,13 @@ function AdminView({ appId, onClose, showToast, theme, db }) {
       for (const resourceToAdd of newResources) {
         count++;
         setUpdateProgressMsg(`업데이트 진행 중... (${count}/${newResources.length})`);
-        
-        await addDoc(booksRef, {
-          ...resourceToAdd,
-          createdAt: new Date().toISOString()
-        });
-        
+        await addDoc(booksRef, { ...resourceToAdd, createdAt: new Date().toISOString() });
         await new Promise(resolve => setTimeout(resolve, 300));
       }
-      
       showToast(`✨ 총 ${newResources.length}권의 새로운 책이 추가되었습니다!`);
       setUpdateProgressMsg('업데이트 완료!');
-      
       setTimeout(() => { setUpdateProgressMsg(''); }, 2000);
-      
     } catch (error) {
-      console.error("오픈 리소스 자동 추가 에러 상세:", error);
       if (error.code === 'permission-denied') {
         showToast("데이터베이스 쓰기 권한이 없습니다. 보안 규칙(Rules)을 변경하세요.");
       } else {
@@ -706,7 +678,6 @@ function AdminView({ appId, onClose, showToast, theme, db }) {
     }
   };
 
-  // --- 비밀번호 변경 로직 ---
   const handleChangePassword = async (e) => {
     e.preventDefault();
     if (!newPassword || newPassword.length < 4) return showToast("비밀번호는 4자리 이상 입력해주세요.");
@@ -718,7 +689,6 @@ function AdminView({ appId, onClose, showToast, theme, db }) {
       showToast("비밀번호가 안전하게 변경되었습니다.");
       setNewPassword('');
     } catch (error) {
-      console.error("비밀번호 변경 에러 상세:", error);
       showToast("비밀번호 변경 실패");
     } finally {
       setIsUpdatingPwd(false);
@@ -734,58 +704,32 @@ function AdminView({ appId, onClose, showToast, theme, db }) {
         </div>
         <button onClick={onClose} className="p-2 font-bold text-sm bg-stone-800 rounded-full px-4 hover:bg-stone-700 transition-colors">닫기</button>
       </header>
-
       <main className="flex-1 overflow-y-auto px-5 py-6 space-y-8">
-        
-        {/* 섹션 1: 오픈 리소스 자동 업데이트 */}
         <section className={`p-6 rounded-3xl shadow-sm border ${isDark ? 'bg-stone-800 border-stone-700' : 'bg-white border-stone-200'}`}>
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-lg flex items-center text-amber-600 dark:text-amber-400">
               <Download size={20} className="mr-2" /> 라이브러리 연동
             </h3>
           </div>
-          <p className="text-sm opacity-70 mb-5 leading-relaxed font-medium">
-            한국 고전문학, 시, 에세이 등 저작권이 만료된 검증된 오픈 도메인 데이터를 클릭 한 번으로 앱에 추가합니다.
-          </p>
-          <button 
-            onClick={handleAutoUpdate} disabled={isUpdatingResource}
+          <p className="text-sm opacity-70 mb-5 leading-relaxed font-medium">한국 고전문학, 시, 에세이 등 저작권이 만료된 데이터를 클릭 한 번으로 추가합니다.</p>
+          <button onClick={handleAutoUpdate} disabled={isUpdatingResource}
             className={`w-full text-white font-bold py-4 rounded-2xl shadow-md transition-all flex justify-center items-center ${isUpdatingResource ? 'bg-amber-600 opacity-80 cursor-wait' : 'bg-stone-900 dark:bg-amber-600 hover:scale-[0.98]'}`}
-          >
-            {isUpdatingResource ? updateProgressMsg : (updateProgressMsg || '오픈 리소스 자동 업데이트')}
-          </button>
+          >{isUpdatingResource ? updateProgressMsg : (updateProgressMsg || '오픈 리소스 자동 업데이트')}</button>
         </section>
-
-        {/* 섹션 2: 비밀번호 변경 */}
         <section className={`p-6 rounded-3xl shadow-sm border ${isDark ? 'bg-stone-800 border-stone-700' : 'bg-white border-stone-200'}`}>
-          <h3 className="font-bold text-lg mb-4 flex items-center text-stone-700 dark:text-stone-300">
-            <Key size={20} className="mr-2" /> 관리자 비밀번호 설정
-          </h3>
-          <p className="text-sm opacity-70 mb-5 font-medium leading-relaxed">
-            비밀번호를 변경합니다. 어머니용 기기에서는 한 번 로그인하면 자동으로 유지됩니다.
-          </p>
+          <h3 className="font-bold text-lg mb-4 flex items-center text-stone-700 dark:text-stone-300"><Key size={20} className="mr-2" /> 관리자 비밀번호 설정</h3>
           <form onSubmit={handleChangePassword} className="flex space-x-2">
-            <input 
-              type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)}
-              placeholder="새 비밀번호 입력" 
-              className={`flex-1 p-4 rounded-2xl border font-medium outline-none ${isDark ? 'bg-stone-900 border-stone-700 text-white' : 'bg-stone-50 border-stone-300 focus:border-stone-500'}`}
-            />
+            <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="새 비밀번호 입력" className={`flex-1 p-4 rounded-2xl border font-medium outline-none ${isDark ? 'bg-stone-900 border-stone-700 text-white' : 'bg-stone-50 border-stone-300'}`} />
             <button type="submit" disabled={isUpdatingPwd} className="bg-stone-800 text-white px-6 rounded-2xl font-bold whitespace-nowrap shadow-sm">변경</button>
           </form>
         </section>
-
-        {/* 섹션 3: 수동 등록 */}
         <section className={`p-6 rounded-3xl shadow-sm border ${isDark ? 'bg-stone-800 border-stone-700' : 'bg-white border-stone-200'}`}>
-           <h3 className="font-bold text-lg mb-6 flex items-center text-stone-700 dark:text-stone-300">
-            <Plus size={20} className="mr-2" /> 직접 콘텐츠 작성
-          </h3>
+           <h3 className="font-bold text-lg mb-6 flex items-center text-stone-700 dark:text-stone-300"><Plus size={20} className="mr-2" /> 직접 콘텐츠 작성</h3>
           <form onSubmit={handleSubmit}>
             <div className="flex space-x-3 mb-5">
               <div className="flex-1">
                 <label className="block text-xs font-bold mb-2 opacity-60 ml-1">카테고리</label>
-                <select 
-                  value={category} onChange={e => setCategory(e.target.value)}
-                  className={`w-full p-4 rounded-2xl border font-medium outline-none appearance-none ${isDark ? 'bg-stone-900 border-stone-700 text-white' : 'bg-stone-50 border-stone-300'}`}
-                >
+                <select value={category} onChange={e => setCategory(e.target.value)} className={`w-full p-4 rounded-2xl border font-medium outline-none appearance-none ${isDark ? 'bg-stone-900 border-stone-700 text-white' : 'bg-stone-50 border-stone-300'}`}>
                   <option value="추천">추천</option>
                   <option value="고전소설">고전소설</option>
                   <option value="에세이">에세이</option>
@@ -797,19 +741,13 @@ function AdminView({ appId, onClose, showToast, theme, db }) {
                 <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="제목 입력" className={`${inputClass} !mb-0`} />
               </div>
             </div>
-
             <label className="block text-xs font-bold mb-2 opacity-60 ml-1">지은이</label>
             <input type="text" value={author} onChange={e => setAuthor(e.target.value)} placeholder="예: 김철수" className={inputClass} />
-
             <label className="block text-xs font-bold mb-2 opacity-60 ml-1">표지 이미지 주소 (URL)</label>
             <input type="text" value={coverUrl} onChange={e => setCoverUrl(e.target.value)} placeholder="비워두면 기본 이미지 사용" className={inputClass} />
-
             <label className="block text-xs font-bold mb-2 opacity-60 ml-1">본문</label>
             <textarea value={content} onChange={e => setContent(e.target.value)} placeholder="내용을 입력하세요..." className={`${inputClass} h-60 resize-none leading-loose`}></textarea>
-
-            <button type="submit" className="w-full bg-stone-900 dark:bg-amber-600 text-white font-bold text-lg py-4 rounded-2xl shadow-md hover:scale-[0.98] transition-transform mt-2">
-              수동 등록하기
-            </button>
+            <button type="submit" className="w-full bg-stone-900 dark:bg-amber-600 text-white font-bold text-lg py-4 rounded-2xl shadow-md hover:scale-[0.98] transition-transform mt-2">수동 등록하기</button>
           </form>
         </section>
       </main>
