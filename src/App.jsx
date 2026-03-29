@@ -7,12 +7,12 @@
  * 서명: 어머니의 편안하고 따뜻한 독서를 위해 정성을 다해 만들었습니다. ✍️
  * ==========================================
  * [버전 정보]
- * v1.2.0 (업데이트 일자: 2026.03.29)
+ * v1.2.1 (업데이트 일자: 2026.03.29)
  * * * [주요 업데이트 내용]
  * 1. UI/UX 전면 개편: 상업용 앱 수준의 부드러운 애니메이션, 글래스모피즘 디자인, 하단 네비게이션 바 적용.
  * 2. 카테고리 세분화: 전체, 추천, 고전소설, 에세이, 시 등 탭(Tab) 기능 추가.
  * 3. 관리자 비밀번호 개선: 최초 1회 입력 시 자동 로그인(로컬 스토리지 활용), 관리자 페이지 내 비밀번호 변경 기능 추가.
- * 4. 콘텐츠 자동 업데이트 로직 변경: AI 생성 대신 저작권 프리(오픈 도메인) 리소스 원클릭 업데이트 기능으로 대체.
+ * 4. 콘텐츠 자동 업데이트 로직 개선: 업데이트 진행 상황(몇 권 중 몇 권 진행) 및 결과 시각적 피드백 추가.
  * ==========================================
  */
 
@@ -33,7 +33,6 @@ import {
 // --- [수정 필요] Firebase 초기화 ---
 // 🚨 주의: 현재는 미리보기 환경을 위해 임시 변수(__firebase_config)를 사용 중입니다.
 // 실제 Vercel 등에 배포할 때는 아래 코드를 지우고 본인의 Firebase Config 객체로 덮어씌워야 합니다.
-// 예시: const firebaseConfig = { apiKey: "...", authDomain: "...", projectId: "..." };
 const firebaseConfig = {
   apiKey: "AIzaSyAB0wKFTZ640iv5IcDAOLph7mNCtEYUU1I",
   authDomain: "momsbookgarden.firebaseapp.com",
@@ -47,12 +46,10 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// 🚨 주의: 배포 시 본인만의 고유한 앱 ID 문자열로 변경하셔도 좋습니다. (예: 'chekchek-my-mom-app')
+// 🚨 주의: 배포 시 본인만의 고유한 앱 ID 문자열로 변경하셔도 좋습니다.
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'chekchek-app';
 
 // --- [수정 가능] 오픈 도메인 데이터베이스 (관리자 원클릭 업데이트용) ---
-// 이곳에 인터넷에 공개된 저작권 만료 시, 소설, 에세이 등을 추가해두면 
-// 관리자 페이지에서 클릭 한 번으로 앱에 반영됩니다.
 const PUBLIC_RESOURCES = [
   {
     title: "별 헤는 밤", author: "윤동주", category: "시",
@@ -86,8 +83,6 @@ export default function App() {
   const [scraps, setScraps] = useState([]);
   const [flowerLevel, setFlowerLevel] = useState(0);
   
-  // --- [확인 필요] 기본 관리자 비밀번호 ---
-  // 앱 최초 구동 시 비밀번호입니다. 관리자 페이지에서 변경하세요.
   const [adminPassword, setAdminPassword] = useState("1234"); 
   const [adminClickCount, setAdminClickCount] = useState(0);
   const [toastMsg, setToastMsg] = useState('');
@@ -105,10 +100,8 @@ export default function App() {
       try {
         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
           try {
-            // 미리보기(Canvas) 환경용 토큰 시도
             await signInWithCustomToken(auth, __initial_auth_token);
           } catch (customTokenError) {
-            // 본인 Firebase(momsbookgarden)를 연결했을 경우 위 토큰이 맞지 않아 이곳으로 우회합니다.
             console.warn("커스텀 토큰 로그인 실패 (외부 Firebase 연결 정상 작동). 익명 로그인으로 전환합니다.");
             await signInAnonymously(auth);
           }
@@ -128,21 +121,18 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
 
-    // 1. 책 목록
     const booksRef = collection(db, 'artifacts', appId, 'public', 'data', 'books');
     const unsubscribeBooks = onSnapshot(booksRef, (snapshot) => {
       const bookList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setBooks(bookList.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
     }, (error) => console.error("Firestore 데이터 에러:", error));
 
-    // 2. 관리자 비밀번호 세팅 가져오기
     const settingsRef = collection(db, 'artifacts', appId, 'public', 'data', 'settings');
     const unsubscribeSettings = onSnapshot(settingsRef, (snapshot) => {
       const pwdDoc = snapshot.docs.find(doc => doc.id === 'admin');
       if (pwdDoc) setAdminPassword(pwdDoc.data().password);
     }, (error) => console.error("Firestore 권한 에러:", error));
 
-    // 3. 개인 진행률
     const progressRef = collection(db, 'artifacts', appId, 'users', user.uid, 'progress');
     const unsubscribeProgress = onSnapshot(progressRef, (snapshot) => {
       const pData = {};
@@ -151,7 +141,6 @@ export default function App() {
       setFlowerLevel(Object.values(pData).filter(p => p.percent >= 95).length);
     }, (error) => console.error("Firestore 진행률 에러:", error));
 
-    // 4. 개인 스크랩
     const scrapsRef = collection(db, 'artifacts', appId, 'users', user.uid, 'scraps');
     const unsubscribeScraps = onSnapshot(scrapsRef, (snapshot) => {
       setScraps(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
@@ -162,7 +151,6 @@ export default function App() {
     };
   }, [user]);
 
-  // 테마 적용
   useEffect(() => {
     if (settings.theme === 'dark') document.documentElement.classList.add('dark');
     else document.documentElement.classList.remove('dark');
@@ -177,13 +165,11 @@ export default function App() {
     setSettings(prev => ({ ...prev, [key]: value }));
   };
 
-  // 관리자 진입 로직 (로컬 스토리지 확인하여 1회 로그인 구현)
   const handleAdminTrigger = () => {
     setAdminClickCount(prev => prev + 1);
     if (adminClickCount >= 4) {
       const savedPwd = localStorage.getItem('chekchek_admin_pwd');
       if (savedPwd === adminPassword) {
-        // 이미 인증된 기기
         setCurrentView('admin');
         setAdminClickCount(0);
         showToast("관리자님, 환영합니다.");
@@ -207,7 +193,7 @@ export default function App() {
     <div className={`min-h-screen w-full transition-all duration-500 font-sans ${isDark ? 'bg-[#121212] text-stone-200' : 'bg-[#F9F8F6] text-stone-800'}`}>
       
       {toastMsg && (
-        <div className="fixed top-6 left-1/2 transform -translate-x-1/2 z-50 bg-stone-800/90 backdrop-blur-md text-white px-6 py-3 rounded-full shadow-2xl font-medium text-sm transition-all animate-fade-in-up">
+        <div className="fixed top-6 left-1/2 transform -translate-x-1/2 z-50 bg-stone-800/90 backdrop-blur-md text-white px-6 py-3 rounded-full shadow-2xl font-medium text-sm transition-all animate-fade-in-up whitespace-nowrap">
           {toastMsg}
         </div>
       )}
@@ -261,7 +247,7 @@ export default function App() {
 }
 
 // ==========================================
-// 1. 메인 홈 화면 (HomeView) - UX 상업용 업그레이드
+// 1. 메인 홈 화면 (HomeView)
 // ==========================================
 function HomeView({ books, progressData, flowerLevel, handleAdminTrigger, onOpenBook, theme, onNavChange }) {
   const [activeCategory, setActiveCategory] = useState('추천');
@@ -278,7 +264,7 @@ function HomeView({ books, progressData, flowerLevel, handleAdminTrigger, onOpen
 
   const filteredBooks = books.filter(b => {
     if (activeCategory === '전체') return true;
-    if (activeCategory === '추천') return b.category === '추천' || true; // 기본적으로 최근순 보여주되, 추천 태그 우선(여기선 전부)
+    if (activeCategory === '추천') return b.category === '추천' || true; 
     return b.category === activeCategory;
   });
 
@@ -290,7 +276,6 @@ function HomeView({ books, progressData, flowerLevel, handleAdminTrigger, onOpen
           <span className="text-amber-600 dark:text-amber-400">{getGreeting()}</span>
         </h1>
         
-        {/* 아름다운 독서 성취 화분 */}
         <div className={`mt-8 p-6 rounded-3xl flex items-center space-x-5 shadow-lg shadow-amber-900/5 transition-all duration-300 ${isDark ? 'bg-stone-800/80' : 'bg-white/80'} backdrop-blur-md border border-white/20`}>
           <div className="text-5xl drop-shadow-md">
             {flowerLevel >= 3 ? "🌸" : flowerLevel === 2 ? "🪴" : flowerLevel === 1 ? "🌿" : "🌱"}
@@ -304,7 +289,6 @@ function HomeView({ books, progressData, flowerLevel, handleAdminTrigger, onOpen
         </div>
       </header>
 
-      {/* 카테고리 탭 */}
       <div className="px-6 py-2 overflow-x-auto hide-scrollbar flex space-x-3 mb-4">
         {categories.map(cat => (
           <button
@@ -373,7 +357,6 @@ function HomeView({ books, progressData, flowerLevel, handleAdminTrigger, onOpen
         )}
       </main>
 
-      {/* 하단 네비게이션 */}
       <nav className={`fixed bottom-0 w-full max-w-md left-1/2 transform -translate-x-1/2 flex justify-around items-center py-4 px-6 rounded-t-3xl shadow-[0_-10px_40px_rgba(0,0,0,0.05)] z-40 backdrop-blur-xl ${isDark ? 'bg-stone-900/90 border-t border-stone-800' : 'bg-white/90 border-t border-stone-100'}`}>
         <button onClick={() => onNavChange('home')} className="flex flex-col items-center text-amber-600 dark:text-amber-500">
           <Home size={24} strokeWidth={2.5} />
@@ -458,7 +441,6 @@ function ReaderView({ book, user, appId, settings, updateSetting, initialProgres
 
   return (
     <div className="fixed inset-0 flex flex-col z-50 bg-inherit transform transition-transform duration-500 translate-y-0">
-      {/* 상단 프로그레스 바 */}
       <div className="h-1.5 w-full bg-stone-200 dark:bg-stone-800 z-50 fixed top-0 left-0">
         <div className="h-full bg-amber-500 transition-all duration-300 ease-out" style={{ width: `${scrollPercent}%` }}></div>
       </div>
@@ -481,7 +463,6 @@ function ReaderView({ book, user, appId, settings, updateSetting, initialProgres
         </div>
       </header>
 
-      {/* 설정 모달 (세련된 디자인) */}
       {showSettings && (
         <div className={`absolute top-20 right-4 p-5 rounded-3xl shadow-2xl z-40 w-72 backdrop-blur-xl ${isDark ? 'bg-stone-800/95 border border-stone-700' : 'bg-white/95 border border-stone-100'}`}>
           <div className="space-y-7">
@@ -606,7 +587,7 @@ function ScrapbookView({ scraps, user, appId, onNavChange, theme }) {
 }
 
 // ==========================================
-// 4. 관리자 화면 (AdminView) - 오픈 API/비밀번호 관리
+// 4. 관리자 화면 (AdminView)
 // ==========================================
 function AdminView({ appId, onClose, showToast, theme, currentBooks }) {
   const [title, setTitle] = useState('');
@@ -618,6 +599,7 @@ function AdminView({ appId, onClose, showToast, theme, currentBooks }) {
   const [newPassword, setNewPassword] = useState('');
   const [isUpdatingPwd, setIsUpdatingPwd] = useState(false);
   const [isUpdatingResource, setIsUpdatingResource] = useState(false);
+  const [updateProgressMsg, setUpdateProgressMsg] = useState(''); // 진행률 표시용 상태
 
   const isDark = theme === 'dark';
   const inputClass = `w-full p-4 rounded-2xl mb-5 border font-medium ${isDark ? 'bg-stone-900 border-stone-700 text-white' : 'bg-stone-50 border-stone-200'} focus:ring-2 focus:ring-amber-500 outline-none transition-all`;
@@ -642,33 +624,51 @@ function AdminView({ appId, onClose, showToast, theme, currentBooks }) {
     }
   };
 
-  // --- 오픈 리소스 자동 업데이트 로직 ---
+  // --- 오픈 리소스 자동 업데이트 로직 (진행률 표시 추가) ---
   const handleAutoUpdate = async () => {
     setIsUpdatingResource(true);
+    setUpdateProgressMsg('업데이트 준비 중...');
+    
     try {
-      // 1. 이미 등록된 오픈 리소스인지 확인 (제목 기준)
       const existingTitles = currentBooks.map(b => b.title);
       const newResources = PUBLIC_RESOURCES.filter(r => !existingTitles.includes(r.title));
       
       if (newResources.length === 0) {
         showToast("현재 사용 가능한 모든 오픈 리소스가 이미 업데이트 되었습니다.");
+        setUpdateProgressMsg('');
         setIsUpdatingResource(false);
         return;
       }
 
-      // 2. 새로운 리소스 모두 DB에 한 번에 추가
       const booksRef = collection(db, 'artifacts', appId, 'public', 'data', 'books');
+      let count = 0;
+      
       for (const resourceToAdd of newResources) {
+        count++;
+        // 현재 몇 권째 업데이트 중인지 버튼에 표시
+        setUpdateProgressMsg(`업데이트 진행 중... (${count}/${newResources.length})`);
+        
         await addDoc(booksRef, {
           ...resourceToAdd,
           createdAt: new Date().toISOString()
         });
+        
+        // 시각적으로 진행 상황을 확인할 수 있도록 아주 짧은 지연 시간 추가
+        await new Promise(resolve => setTimeout(resolve, 300));
       }
       
-      showToast(`✨ 총 ${newResources.length}권의 새로운 책이 한 번에 자동 추가되었습니다!`);
+      showToast(`✨ 총 ${newResources.length}권의 새로운 책이 추가되었습니다!`);
+      setUpdateProgressMsg('업데이트 완료!');
+      
+      // 2초 뒤에 메세지 원상 복구
+      setTimeout(() => {
+        setUpdateProgressMsg('');
+      }, 2000);
+      
     } catch (error) {
-      console.error("오픈 리소스 자동 추가 에러 상세:", error); // 디버깅용 에러 출력 추가
+      console.error("오픈 리소스 자동 추가 에러 상세:", error);
       showToast("오픈 리소스 업데이트 중 오류가 발생했습니다.");
+      setUpdateProgressMsg('');
     } finally {
       setIsUpdatingResource(false);
     }
@@ -682,7 +682,7 @@ function AdminView({ appId, onClose, showToast, theme, currentBooks }) {
     try {
       const pwdRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'admin');
       await setDoc(pwdRef, { password: newPassword });
-      localStorage.setItem('chekchek_admin_pwd', newPassword); // 현재 기기 로컬스토리지 동기화
+      localStorage.setItem('chekchek_admin_pwd', newPassword); 
       showToast("비밀번호가 안전하게 변경되었습니다.");
       setNewPassword('');
     } catch (error) {
@@ -717,9 +717,9 @@ function AdminView({ appId, onClose, showToast, theme, currentBooks }) {
           </p>
           <button 
             onClick={handleAutoUpdate} disabled={isUpdatingResource}
-            className="w-full bg-stone-900 dark:bg-amber-600 text-white font-bold py-4 rounded-2xl shadow-md hover:scale-[0.98] transition-transform flex justify-center items-center disabled:opacity-50"
+            className={`w-full text-white font-bold py-4 rounded-2xl shadow-md transition-all flex justify-center items-center ${isUpdatingResource ? 'bg-amber-600 opacity-80 cursor-wait' : 'bg-stone-900 dark:bg-amber-600 hover:scale-[0.98]'}`}
           >
-            {isUpdatingResource ? '다운로드 중...' : '오픈 리소스 자동 업데이트'}
+            {isUpdatingResource ? updateProgressMsg : (updateProgressMsg || '오픈 리소스 자동 업데이트')}
           </button>
         </section>
 
