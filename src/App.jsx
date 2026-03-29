@@ -20,7 +20,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   BookOpen, Settings, Moon, Sun, Volume2, VolumeX, 
   ArrowLeft, Heart, Flower2, Lock, Home, 
-  Bookmark, Check, Sparkles, Key, Download, Library, Search
+  Bookmark, Check, Sparkles, Key, Download, Library, Search, Plus, Type
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { 
