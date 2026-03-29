@@ -32,7 +32,7 @@ import {
 
 // --- Firebase 초기화 (제공된 환경 변수 사용, 실제 배포시 자신의 Config로 변경) ---
 const firebaseConfig = {
-  apiKey: "AIzaSyCzHAO5mY-s-DLPiIiZegLK-MjueinHQa8",
+  apiKey: "AIzaSyAB0wKFTZ640iv5IcDAOLph7mNCtEYUU1I",
   authDomain: "momsbookgarden.firebaseapp.com",
   projectId: "momsbookgarden",
   storageBucket: "momsbookgarden.firebasestorage.app",
