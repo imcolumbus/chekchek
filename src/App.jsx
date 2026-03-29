@@ -104,7 +104,14 @@ export default function App() {
     const initAuth = async () => {
       try {
         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
+          try {
+            // 미리보기(Canvas) 환경용 토큰 시도
+            await signInWithCustomToken(auth, __initial_auth_token);
+          } catch (customTokenError) {
+            // 본인 Firebase(momsbookgarden)를 연결했을 경우 위 토큰이 맞지 않아 이곳으로 우회합니다.
+            console.warn("커스텀 토큰 로그인 실패 (외부 Firebase 연결 정상 작동). 익명 로그인으로 전환합니다.");
+            await signInAnonymously(auth);
+          }
         } else {
           await signInAnonymously(auth);
         }
@@ -629,10 +636,13 @@ function AdminView({ appId, onClose, showToast, theme, currentBooks }) {
       });
       showToast("새 콘텐츠가 성공적으로 등록되었습니다.");
       setTitle(''); setAuthor(''); setCoverUrl(''); setContent('');
-    } catch (error) { showToast("등록 중 오류가 발생했습니다."); }
+    } catch (error) { 
+      console.error("수동 등록 에러 상세:", error);
+      showToast("등록 중 오류가 발생했습니다."); 
+    }
   };
 
-  // --- 오픈 리소스 원클릭 업데이트 로직 ---
+  // --- 오픈 리소스 자동 업데이트 로직 ---
   const handleAutoUpdate = async () => {
     setIsUpdatingResource(true);
     try {
@@ -646,7 +656,7 @@ function AdminView({ appId, onClose, showToast, theme, currentBooks }) {
         return;
       }
 
-      // 2. 새로운 리소스 모두 DB에 한 번에 추가 (번거로움 최소화)
+      // 2. 새로운 리소스 모두 DB에 한 번에 추가
       const booksRef = collection(db, 'artifacts', appId, 'public', 'data', 'books');
       for (const resourceToAdd of newResources) {
         await addDoc(booksRef, {
@@ -657,6 +667,7 @@ function AdminView({ appId, onClose, showToast, theme, currentBooks }) {
       
       showToast(`✨ 총 ${newResources.length}권의 새로운 책이 한 번에 자동 추가되었습니다!`);
     } catch (error) {
+      console.error("오픈 리소스 자동 추가 에러 상세:", error); // 디버깅용 에러 출력 추가
       showToast("오픈 리소스 업데이트 중 오류가 발생했습니다.");
     } finally {
       setIsUpdatingResource(false);
@@ -675,6 +686,7 @@ function AdminView({ appId, onClose, showToast, theme, currentBooks }) {
       showToast("비밀번호가 안전하게 변경되었습니다.");
       setNewPassword('');
     } catch (error) {
+      console.error("비밀번호 변경 에러 상세:", error);
       showToast("비밀번호 변경 실패");
     } finally {
       setIsUpdatingPwd(false);
