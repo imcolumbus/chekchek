@@ -3,17 +3,6 @@
  * 모바일 이북 프로그램 : 책책 (ChekChek)
  * 대상: 어머니
  * ==========================================
- * [버전 정보]
- * v1.1.0 (업데이트: AI 기반 자동 책 생성 기능 추가)
- * * [주요 기능 정리]
- * 1. 코어 기능: Firestore 연동, 실시간 책 목록 불러오기, 진행률 및 마지막 읽은 위치 자동 저장.
- * 2. 시력 보호 및 편의: 다크모드/라이트모드 자동 및 수동 전환, 글자 크기 4단계 조절, 명조/고딕 폰트 변경.
- * 3. 오디오북 (TTS): 웹 음성 API를 활용한 책 읽어주기 기능.
- * 4. 감성 기능: 시간대별 인사말, 문단 스크랩(보관함), 독서 꽃 키우기(성취감).
- * 5. 관리자 기능: 인사말 5회 연속 터치 시 Admin 진입 (비밀번호: 1234). 
- * - [NEW] 주제 키워드만 입력하면 AI가 따뜻한 스토리와 표지 이미지를 자동으로 생성하여 채워주는 기능 추가.
- * 6. UI/UX: 직관적이고 큼직한 버튼, 부드러운 스크롤, 고급스러운 테마.
- * ==========================================
  */
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -30,15 +19,10 @@ import {
   getFirestore, collection, doc, setDoc, getDoc, getDocs, onSnapshot, addDoc, deleteDoc 
 } from 'firebase/firestore';
 
-// --- Firebase 초기화 (제공된 환경 변수 사용, 실제 배포시 자신의 Config로 변경) ---
-const firebaseConfig = {
-  apiKey: "AIzaSyAB0wKFTZ640iv5IcDAOLph7mNCtEYUU1I",
-  authDomain: "momsbookgarden.firebaseapp.com",
-  projectId: "momsbookgarden",
-  storageBucket: "momsbookgarden.firebasestorage.app",
-  messagingSenderId: "651374929728",
-  appId: "1:651374929728:web:57d1c93033e57e4577bca5"
-};
+// --- Firebase 초기화 ---
+const firebaseConfig = typeof __firebase_config !== 'undefined' 
+  ? JSON.parse(__firebase_config) 
+  : { projectId: "demo-project" };
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -121,12 +105,12 @@ export default function App() {
       
       const completed = Object.values(pData).filter(p => p.percent >= 95).length;
       setFlowerLevel(completed);
-    });
+    }, (error) => console.error(error));
 
     const scrapsRef = collection(db, 'artifacts', appId, 'users', user.uid, 'scraps');
     const unsubscribeScraps = onSnapshot(scrapsRef, (snapshot) => {
       setScraps(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
+    }, (error) => console.error(error));
 
     return () => {
       unsubscribeBooks();
@@ -175,7 +159,6 @@ export default function App() {
 
   return (
     <div className={`min-h-screen w-full transition-colors duration-300 ${settings.theme === 'dark' ? 'bg-gray-900 text-gray-200' : 'bg-[#FAFAF5] text-stone-800'}`}>
-      
       {toastMsg && (
         <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-stone-800 text-white px-6 py-3 rounded-full shadow-lg font-medium text-sm transition-opacity">
           {toastMsg}
@@ -248,7 +231,7 @@ function HomeView({ books, progressData, flowerLevel, getGreeting, handleAdminTr
     <div className="max-w-md mx-auto min-h-screen pb-20">
       <header className="pt-12 pb-6 px-6">
         <h1 
-          className="text-2xl font-bold font-serif leading-relaxed"
+          className="text-2xl font-bold font-serif leading-relaxed select-none"
           onClick={handleAdminTrigger}
         >
           {getGreeting()}
@@ -281,7 +264,7 @@ function HomeView({ books, progressData, flowerLevel, getGreeting, handleAdminTr
               <div 
                 key={book.id} 
                 onClick={() => onOpenBook(book)}
-                className={`rounded-2xl overflow-hidden shadow-sm active:scale-95 transition-transform ${isDark ? 'bg-gray-800' : 'bg-white'}`}
+                className={`rounded-2xl overflow-hidden shadow-sm active:scale-95 transition-transform cursor-pointer ${isDark ? 'bg-gray-800' : 'bg-white'}`}
               >
                 <div className="aspect-[3/4] w-full bg-gray-200 relative">
                   <img 
@@ -474,13 +457,13 @@ function ReaderView({ book, user, appId, settings, updateSetting, initialProgres
                   onClick={() => updateSetting('theme', 'light')}
                   className={`flex-1 flex justify-center py-2 rounded-xl border ${settings.theme === 'light' ? 'bg-amber-100 border-amber-300 text-amber-800' : 'border-gray-200 dark:border-gray-700'}`}
                 >
-                  <Sun size={20} /> <span className="ml-2">낮 (밝게)</span>
+                  <Sun size={20} /> <span className="ml-2">낮</span>
                 </button>
                 <button 
                   onClick={() => updateSetting('theme', 'dark')}
                   className={`flex-1 flex justify-center py-2 rounded-xl border ${settings.theme === 'dark' ? 'bg-amber-900 border-amber-700 text-amber-100' : 'border-gray-200 dark:border-gray-700'}`}
                 >
-                  <Moon size={20} /> <span className="ml-2">밤 (어둡게)</span>
+                  <Moon size={20} /> <span className="ml-2">밤</span>
                 </button>
               </div>
             </div>
@@ -605,42 +588,68 @@ function AdminView({ appId, onClose, showToast, theme }) {
     showToast("AI가 어머니를 위한 글을 짓고 있습니다... (약 10초 소요)");
 
     try {
-      const apiKey = ""; // 실행 환경에서 런타임에 주입됨
-      const prompt = `어머니가 핸드폰으로 읽기 좋은 따뜻하고 긍정적인 내용의 짧은 에세이 또는 이야기를 한국어로 작성해줘.
-      주제 키워드: ${keyword}
-      응답은 반드시 아래 JSON 형식으로만 반환해 (다른 말은 하지 마).
-      {
-        "title": "책 제목 (한국어)",
-        "content": "본문 내용 (한국어, 문단 구분을 위해 \\n\\n 사용. 1~2분 정도 읽을 분량)",
-        "imagePrompt": "표지에 어울리는 따뜻한 분위기의 아름다운 그림 프롬프트 (반드시 영어로 작성, 예: A warm watercolor painting of a spring garden with blooming flowers)"
-      }`;
+      // 미리보기 환경(Canvas)을 위해 기본은 비워두고, Vercel 배포 시에만 환경변수를 활용하도록 안내합니다.
+      // 🚨 실제 배포하시는 로컬/Github 코드에서는 아래 줄을 다음과 같이 수정해주세요:
+      // const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+      const apiKey = ""; 
+      const prompt = `어머니가 핸드폰으로 읽기 좋은 따뜻하고 긍정적인 내용의 짧은 에세이 또는 이야기를 한국어로 작성해줘. 주제 키워드: ${keyword}`;
 
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { responseMimeType: "application/json" }
-        })
-      });
+      const payload = {
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { 
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: "OBJECT",
+            properties: {
+              title: { type: "STRING" },
+              content: { type: "STRING" },
+              imagePrompt: { type: "STRING" }
+            },
+            required: ["title", "content", "imagePrompt"]
+          }
+        }
+      };
+
+      let response;
+      let delay = 1000;
+      for (let i = 0; i < 5; i++) {
+        try {
+          response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          if (response.ok) break;
+        } catch(e) { /* 무시하고 재시도 */ }
+        
+        if (i < 4) {
+          await new Promise(r => setTimeout(r, delay));
+          delay *= 2;
+        }
+      }
+
+      if (!response || !response.ok) {
+        throw new Error("API 요청 실패.");
+      }
 
       const data = await response.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      let text = data.candidates?.[0]?.content?.parts?.[0]?.text;
       if (!text) throw new Error("텍스트 생성 실패");
+
+      text = text.replace(/\`\`\`json/g, '').replace(/\`\`\`/g, '').trim();
 
       const result = JSON.parse(text);
       setTitle(result.title);
       setContent(result.content);
       setAuthor("따뜻한 AI 작가");
       
-      // Pollinations AI의 무료 오픈 엔드포인트를 사용하여 프롬프트 기반 이미지 URL 자동 매핑
       const generatedImageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(result.imagePrompt)}?width=400&height=600&nologo=true`;
       setCoverUrl(generatedImageUrl);
       
       showToast("✨ AI가 책 초안과 표지를 완성했습니다! 확인 후 저장해주세요.");
     } catch (error) {
-      console.error(error);
-      showToast("자동 생성 중 오류가 발생했습니다.");
+      console.error("AI 생성 에러:", error);
+      showToast("자동 생성 중 오류가 발생했습니다. (API 키를 확인해주세요)");
     } finally {
       setIsGenerating(false);
     }
@@ -665,7 +674,7 @@ function AdminView({ appId, onClose, showToast, theme }) {
       });
       showToast("새 책이 성공적으로 등록되었습니다!");
       setTitle(''); setAuthor(''); setCoverUrl(''); setContent('');
-      onClose(); // 성공 후 홈으로
+      onClose();
     } catch (error) {
       console.error(error);
       showToast("등록 중 오류가 발생했습니다.");
@@ -690,8 +699,6 @@ function AdminView({ appId, onClose, showToast, theme }) {
       </header>
 
       <main className="flex-1 overflow-y-auto px-6 py-6">
-        
-        {/* AI 자동 생성 영역 */}
         <div className={`p-4 rounded-xl mb-6 border ${isDark ? 'bg-gray-800 border-amber-900' : 'bg-amber-50 border-amber-200'}`}>
           <h3 className="font-bold mb-2 flex items-center text-amber-600 dark:text-amber-400">
             <Sparkles size={18} className="mr-1" /> AI 자동 책 작성기
