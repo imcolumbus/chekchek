@@ -7,13 +7,13 @@
  * 서명: 어머니의 편안하고 따뜻한 독서를 위해 정성을 다해 만들었습니다. ✍️
  * ==========================================
  * [버전 정보]
- * v1.2.2 (업데이트 일자: 2026.03.29)
+ * v1.2.3 (업데이트 일자: 2026.03.29)
  * * * [주요 업데이트 내용]
  * 1. UI/UX 전면 개편: 상업용 앱 수준의 부드러운 애니메이션, 글래스모피즘 디자인, 하단 네비게이션 바 적용.
  * 2. 카테고리 세분화: 전체, 추천, 고전소설, 에세이, 시 등 탭(Tab) 기능 추가.
  * 3. 관리자 비밀번호 개선: 최초 1회 입력 시 자동 로그인(로컬 스토리지 활용), 관리자 페이지 내 비밀번호 변경 기능 추가.
  * 4. 콘텐츠 자동 업데이트 로직 개선: 업데이트 진행 상황(몇 권 중 몇 권 진행) 및 결과 시각적 피드백 추가.
- * 5. [중요 픽스] 데이터베이스 동기화 오류 해결: PC와 모바일이 동일한 DB를 바라보도록 appId 완전 고정.
+ * 5. [중요 픽스] 데이터베이스가 비어있을 경우 빈 화면이 나오는 현상 방지: 자동으로 기본 책 노출(Fallback) 적용.
  * ==========================================
  */
 
@@ -45,9 +45,7 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// 🚨 [중요 픽스] 앱 ID 완전 고정!
-// PC 미리보기 화면과 Vercel 모바일 화면이 서로 다른 저장소를 바라보는 현상을 막기 위해
-// 'momsbookgarden-app' 이라는 고정된 방 번호(appId)만 사용하도록 수정했습니다.
+// 앱 ID 완전 고정
 const appId = 'momsbookgarden-app';
 
 // --- 오픈 도메인 데이터베이스 (관리자 원클릭 업데이트용) ---
@@ -73,6 +71,13 @@ const PUBLIC_RESOURCES = [
     content: "나보기가 역겨워\n가실 때에는\n말없이 고이 보내 드리우리다.\n\n영변에 약산\n진달래꽃\n아름 따다 가실 길에 뿌리우리다.\n\n가시는 걸음 걸음\n놓인 그 꽃을\n사뿐히 즈려 밟고 가시옵소서."
   }
 ];
+
+// 빈 화면 방지용 목업 데이터
+const MOCK_BOOKS = PUBLIC_RESOURCES.map((res, index) => ({
+  id: `mock_${index}`,
+  ...res,
+  createdAt: new Date().toISOString()
+}));
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -103,7 +108,7 @@ export default function App() {
           try {
             await signInWithCustomToken(auth, __initial_auth_token);
           } catch (customTokenError) {
-            console.warn("커스텀 토큰 로그인 실패 (외부 Firebase 연결 정상 작동). 익명 로그인으로 전환합니다.");
+            console.warn("커스텀 토큰 로그인 실패. 익명 로그인으로 전환합니다.");
             await signInAnonymously(auth);
           }
         } else {
@@ -125,8 +130,17 @@ export default function App() {
     const booksRef = collection(db, 'artifacts', appId, 'public', 'data', 'books');
     const unsubscribeBooks = onSnapshot(booksRef, (snapshot) => {
       const bookList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setBooks(bookList.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
-    }, (error) => console.error("Firestore 데이터 에러:", error));
+      
+      // DB가 완전히 비어있을 경우, 빈 화면 대신 기본 리소스를 보여줍니다.
+      if (bookList.length > 0) {
+        setBooks(bookList.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
+      } else {
+        setBooks(MOCK_BOOKS);
+      }
+    }, (error) => {
+      console.error("Firestore 데이터 에러:", error);
+      setBooks(MOCK_BOOKS); // 에러 발생 시에도 빈 화면이 나오지 않도록 처리
+    });
 
     const settingsRef = collection(db, 'artifacts', appId, 'public', 'data', 'settings');
     const unsubscribeSettings = onSnapshot(settingsRef, (snapshot) => {
@@ -240,7 +254,7 @@ export default function App() {
           onClose={() => setCurrentView('home')}
           showToast={showToast}
           theme={settings.theme}
-          currentBooks={books}
+          db={db}
         />
       )}
     </div>
@@ -590,7 +604,7 @@ function ScrapbookView({ scraps, user, appId, onNavChange, theme }) {
 // ==========================================
 // 4. 관리자 화면 (AdminView)
 // ==========================================
-function AdminView({ appId, onClose, showToast, theme, currentBooks }) {
+function AdminView({ appId, onClose, showToast, theme, db }) {
   const [title, setTitle] = useState('');
   const [author, setAuthor] = useState('');
   const [category, setCategory] = useState('에세이');
@@ -600,7 +614,7 @@ function AdminView({ appId, onClose, showToast, theme, currentBooks }) {
   const [newPassword, setNewPassword] = useState('');
   const [isUpdatingPwd, setIsUpdatingPwd] = useState(false);
   const [isUpdatingResource, setIsUpdatingResource] = useState(false);
-  const [updateProgressMsg, setUpdateProgressMsg] = useState(''); // 진행률 표시용 상태
+  const [updateProgressMsg, setUpdateProgressMsg] = useState('');
 
   const isDark = theme === 'dark';
   const inputClass = `w-full p-4 rounded-2xl mb-5 border font-medium ${isDark ? 'bg-stone-900 border-stone-700 text-white' : 'bg-stone-50 border-stone-200'} focus:ring-2 focus:ring-amber-500 outline-none transition-all`;
@@ -625,28 +639,28 @@ function AdminView({ appId, onClose, showToast, theme, currentBooks }) {
     }
   };
 
-  // --- 오픈 리소스 자동 업데이트 로직 (진행률 표시 추가) ---
+  // --- 오픈 리소스 자동 업데이트 로직 (DB에서 직접 조회하도록 개선) ---
   const handleAutoUpdate = async () => {
     setIsUpdatingResource(true);
     setUpdateProgressMsg('업데이트 준비 중...');
     
     try {
-      const existingTitles = currentBooks.map(b => b.title);
+      const booksRef = collection(db, 'artifacts', appId, 'public', 'data', 'books');
+      const snapshot = await getDocs(booksRef);
+      const existingTitles = snapshot.docs.map(doc => doc.data().title);
+      
       const newResources = PUBLIC_RESOURCES.filter(r => !existingTitles.includes(r.title));
       
       if (newResources.length === 0) {
-        showToast("현재 사용 가능한 모든 오픈 리소스가 이미 업데이트 되었습니다.");
+        showToast("현재 사용 가능한 모든 오픈 리소스가 이미 DB에 업데이트 되었습니다.");
         setUpdateProgressMsg('');
         setIsUpdatingResource(false);
         return;
       }
 
-      const booksRef = collection(db, 'artifacts', appId, 'public', 'data', 'books');
       let count = 0;
-      
       for (const resourceToAdd of newResources) {
         count++;
-        // 현재 몇 권째 업데이트 중인지 버튼에 표시
         setUpdateProgressMsg(`업데이트 진행 중... (${count}/${newResources.length})`);
         
         await addDoc(booksRef, {
@@ -654,17 +668,13 @@ function AdminView({ appId, onClose, showToast, theme, currentBooks }) {
           createdAt: new Date().toISOString()
         });
         
-        // 시각적으로 진행 상황을 확인할 수 있도록 아주 짧은 지연 시간 추가
         await new Promise(resolve => setTimeout(resolve, 300));
       }
       
       showToast(`✨ 총 ${newResources.length}권의 새로운 책이 추가되었습니다!`);
       setUpdateProgressMsg('업데이트 완료!');
       
-      // 2초 뒤에 메세지 원상 복구
-      setTimeout(() => {
-        setUpdateProgressMsg('');
-      }, 2000);
+      setTimeout(() => { setUpdateProgressMsg(''); }, 2000);
       
     } catch (error) {
       console.error("오픈 리소스 자동 추가 에러 상세:", error);
