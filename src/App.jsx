@@ -7,13 +7,14 @@
  * 서명: 어머니의 편안하고 따뜻한 독서를 위해 정성을 다해 만들었습니다. ✍️
  * ==========================================
  * [버전 정보]
- * v1.2.3 (업데이트 일자: 2026.03.29)
+ * v1.2.5 (업데이트 일자: 2026.03.29)
  * * * [주요 업데이트 내용]
  * 1. UI/UX 전면 개편: 상업용 앱 수준의 부드러운 애니메이션, 글래스모피즘 디자인, 하단 네비게이션 바 적용.
  * 2. 카테고리 세분화: 전체, 추천, 고전소설, 에세이, 시 등 탭(Tab) 기능 추가.
  * 3. 관리자 비밀번호 개선: 최초 1회 입력 시 자동 로그인(로컬 스토리지 활용), 관리자 페이지 내 비밀번호 변경 기능 추가.
  * 4. 콘텐츠 자동 업데이트 로직 개선: 업데이트 진행 상황(몇 권 중 몇 권 진행) 및 결과 시각적 피드백 추가.
- * 5. [중요 픽스] 데이터베이스가 비어있을 경우 빈 화면이 나오는 현상 방지: 자동으로 기본 책 노출(Fallback) 적용.
+ * 5. 데이터베이스가 비어있을 경우 빈 화면 방지(Fallback) 적용.
+ * 6. [중요 픽스] 데이터베이스 보안 규칙(Permission Denied) 차단 시 사용자에게 원인을 알려주는 알림 로직 추가.
  * ==========================================
  */
 
@@ -82,7 +83,8 @@ const MOCK_BOOKS = PUBLIC_RESOURCES.map((res, index) => ({
 export default function App() {
   const [user, setUser] = useState(null);
   const [currentView, setCurrentView] = useState('home'); 
-  const [books, setBooks] = useState([]);
+  
+  const [books, setBooks] = useState(MOCK_BOOKS); 
   const [activeBook, setActiveBook] = useState(null);
   
   const [progressData, setProgressData] = useState({});
@@ -116,6 +118,7 @@ export default function App() {
         }
       } catch (error) {
         console.error("Auth error:", error);
+        setToastMsg("Firebase 설정 오류: '익명 로그인(Anonymous)'을 켜주세요!");
       }
     };
     initAuth();
@@ -130,16 +133,14 @@ export default function App() {
     const booksRef = collection(db, 'artifacts', appId, 'public', 'data', 'books');
     const unsubscribeBooks = onSnapshot(booksRef, (snapshot) => {
       const bookList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      
-      // DB가 완전히 비어있을 경우, 빈 화면 대신 기본 리소스를 보여줍니다.
       if (bookList.length > 0) {
         setBooks(bookList.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
-      } else {
-        setBooks(MOCK_BOOKS);
       }
     }, (error) => {
       console.error("Firestore 데이터 에러:", error);
-      setBooks(MOCK_BOOKS); // 에러 발생 시에도 빈 화면이 나오지 않도록 처리
+      if (error.code === 'permission-denied') {
+        setToastMsg("데이터베이스 접근이 차단되었습니다. Firebase 보안 규칙(Rules)을 확인하세요.");
+      }
     });
 
     const settingsRef = collection(db, 'artifacts', appId, 'public', 'data', 'settings');
@@ -173,7 +174,7 @@ export default function App() {
 
   const showToast = (msg) => {
     setToastMsg(msg);
-    setTimeout(() => setToastMsg(''), 3000);
+    setTimeout(() => setToastMsg(''), 4000);
   };
 
   const updateSetting = (key, value) => {
@@ -635,11 +636,15 @@ function AdminView({ appId, onClose, showToast, theme, db }) {
       setTitle(''); setAuthor(''); setCoverUrl(''); setContent('');
     } catch (error) { 
       console.error("수동 등록 에러 상세:", error);
-      showToast("등록 중 오류가 발생했습니다."); 
+      if (error.code === 'permission-denied') {
+        showToast("권한이 없습니다. Firebase 보안 규칙(Rules)을 확인하세요.");
+      } else {
+        showToast("등록 중 오류가 발생했습니다."); 
+      }
     }
   };
 
-  // --- 오픈 리소스 자동 업데이트 로직 (DB에서 직접 조회하도록 개선) ---
+  // --- 오픈 리소스 자동 업데이트 로직 ---
   const handleAutoUpdate = async () => {
     setIsUpdatingResource(true);
     setUpdateProgressMsg('업데이트 준비 중...');
@@ -678,7 +683,11 @@ function AdminView({ appId, onClose, showToast, theme, db }) {
       
     } catch (error) {
       console.error("오픈 리소스 자동 추가 에러 상세:", error);
-      showToast("오픈 리소스 업데이트 중 오류가 발생했습니다.");
+      if (error.code === 'permission-denied') {
+        showToast("데이터베이스 쓰기 권한이 없습니다. 보안 규칙(Rules)을 변경하세요.");
+      } else {
+        showToast("오픈 리소스 업데이트 중 오류가 발생했습니다.");
+      }
       setUpdateProgressMsg('');
     } finally {
       setIsUpdatingResource(false);
